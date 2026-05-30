@@ -1,0 +1,7 @@
+ultralytics>=8.3.0
+opencv-python>=4.9.0
+numpy>=1.26.0
+matplotlib>=3.8.0
+scikit-learn>=1.4.0
+onnx>=1.16.0
+onnxsim>=0.4.36

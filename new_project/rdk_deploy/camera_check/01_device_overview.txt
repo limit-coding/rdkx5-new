@@ -1,0 +1,22 @@
+ubuntu
+Wed May  6 13:18:31 CST 2026
+Linux ubuntu 6.1.83 #1 SMP PREEMPT Tue Feb 11 00:25:16 CST 2025 aarch64 aarch64 aarch64 GNU/Linux
+
+===== /dev camera nodes =====
+
+===== usb =====
+Bus 002 Device 002: ID 05e3:0626 Genesys Logic, Inc. USB3.1 Hub
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 001 Device 003: ID 1a86:7523 QinHeng Electronics CH340 serial converter
+Bus 001 Device 002: ID 05e3:0610 Genesys Logic, Inc. Hub
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+
+===== tools =====
+v4l2-ctl: /usr/bin/v4l2-ctl
+ffmpeg: /usr/bin/ffmpeg
+gst-launch-1.0: fswebcam: yavta: media-ctl: /usr/bin/media-ctl
+python3: /usr/bin/python3
+i2cdetect: /usr/sbin/i2cdetect
+
+===== groups =====
+uid=1000(sunrise) gid=1000(sunrise) groups=1000(sunrise),6(disk),15(kmem),20(dialout),27(sudo),29(audio),44(video),108(render),111(i2c),121(lightdm),991(vpu),992(gdm),993(weston-launch),994(graphics),995(jpu),996(ipu),997(vps),998(misc),999(gpio)

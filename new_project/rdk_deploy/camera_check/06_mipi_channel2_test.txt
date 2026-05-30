@@ -1,0 +1,27 @@
+[INFO] [launch]: All log files can be found below /home/sunrise/.ros/log/2026-05-06-13-19-25-220960-ubuntu-6306
+[INFO] [launch]: Default logging verbosity is set to INFO
+config_file_path is  /opt/tros/humble/lib/mipi_cam/config/
+Hobot shm pkg enables zero-copy with fastrtps profiles file: /opt/tros/humble/lib/hobot_shm/config/shm_fastdds.xml
+Hobot shm pkg sets RMW_FASTRTPS_USE_QOS_FROM_XML: 1
+env of RMW_FASTRTPS_USE_QOS_FROM_XML is  1 , ignore env setting
+[INFO] [mipi_cam-1]: process started with pid [6312]
+[mipi_cam-1] [WARN] [1778044766.345093331] [mipi_node]: dual_combine value: 0
+[mipi_cam-1] [WARN] [1778044766.345332454] [mipi_node]: frame_ts_type value: realtime
+[mipi_cam-1] [WARN] [1778044766.363274743] [mipi_factory]: board_type X5_RDK
+[mipi_cam-1] 
+[mipi_cam-1] [WARN] [1778044766.365178646] [mipi_cam]: this board support mipi:
+[mipi_cam-1] [WARN] [1778044766.365557602] [mipi_cam]: host 0
+[mipi_cam-1] [WARN] [1778044766.365666726] [mipi_cam]: host 2
+[mipi_cam-1] [WARN] [1778044766.366131347] [mipi_cam]: Camera calibration file: /_calibration.yaml is not exist!
+[mipi_cam-1] If you need calibration msg, please make sure the calibration file path is correct and the calibration file exists!
+[mipi_cam-1] [ERROR] [1778044769.230547789] [mipi_cam]: [init]->cap capture init failture.
+[mipi_cam-1] 
+[mipi_cam-1] [ERROR] [1778044769.230729746] [mipi_node]: [init]->mipinode init failure.
+[mipi_cam-1] 
+[mipi_cam-1] [WARN] [1778044769.233280436] [mipi_cam]: Enabling zero-copy
+[mipi_cam-1] [WARN] [1778044769.233442726] [mipi_cam]: Camera calibration file: /opt/tros/humble/lib/mipi_cam/config//DEFAULT_calibration.yaml is not exist!
+[mipi_cam-1] If you need calibration msg, please make sure the calibration file path is correct and the calibration file exists!
+[mipi_cam-1] [WARN] [1778044769.233477435] [mipi_node]: get camera calibration parameters failed
+[mipi_cam-1] terminate called after throwing an instance of 'rclcpp::exceptions::RCLError'
+[mipi_cam-1]   what():  could not create publisher: rcl node's context is invalid, at ./src/rcl/node.c:428
+[ERROR] [mipi_cam-1]: process has died [pid 6312, exit code -6, cmd '/opt/tros/humble/lib/mipi_cam/mipi_cam --ros-args --log-level warn --ros-args --params-file /tmp/launch_params_2pzw23dk --params-file /tmp/launch_params_4z9n15cw --params-file /tmp/launch_params_1t52wmp9 --params-file /tmp/launch_params_2_ax34d7 --params-file /tmp/launch_params_hoocvgi2 --params-file /tmp/launch_params_nwn1682d --params-file /tmp/launch_params_jpb915pm --params-file /tmp/launch_params_qxge6k6n --params-file /tmp/launch_params_7ua7d131 --params-file /tmp/launch_params_k2u9d175 --params-file /tmp/launch_params_yeev_eqf'].

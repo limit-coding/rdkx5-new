@@ -1,0 +1,22 @@
+model_parameters:
+  onnx_model: '/data/yolo11_det/best.onnx'
+  march: 'bayes-e'
+  working_dir: '/data/yolo11_det/work'
+  output_model_file_prefix: 'yolo11_det_640x640_nv12'
+
+input_parameters:
+  input_type_rt: 'nv12'
+  input_type_train: 'rgb'
+  input_layout_train: 'NCHW'
+  norm_type: 'data_scale'
+  scale_value: 0.003921568627451
+
+calibration_parameters:
+  cal_data_dir: '/data/yolo11_det/calibration_images'
+  cal_data_type: 'float32'
+  preprocess_on: true
+  calibration_type: 'default'
+
+compiler_parameters:
+  compile_mode: 'latency'
+  optimize_level: 'O3'

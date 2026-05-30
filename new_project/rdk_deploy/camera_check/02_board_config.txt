@@ -1,0 +1,103 @@
+===== socinfo =====
+/sys/class/socinfo/ddr_freq
+4266
+/sys/class/socinfo/soc_name
+x5m
+/sys/class/socinfo/ddr_type
+lpddr4
+/sys/class/socinfo/ddr_size
+8192MB
+/sys/class/socinfo/bak_slot
+0
+/sys/class/socinfo/bootdevice_name
+nand
+/sys/class/socinfo/ddr_vendor
+Micron
+/sys/class/socinfo/soc_uid
+0x308118a90a2dc29f01b648d800000240
+/sys/class/socinfo/soc_gen
+x5
+/sys/class/socinfo/hw_name
+x5-rdk
+/sys/class/socinfo/secure_chip
+/sys/class/socinfo/board_id
+302
+/sys/class/socinfo/board_version
+V1P0
+/sys/class/socinfo/board_name
+000000000000-Micron-8192MB-4266
+
+===== board_config =====
+{
+  "version": "3.0.0",
+  "board_202": {
+    "board_id": "202",
+    "camera_num": 3,
+    "cameras": [
+      {
+        "i2c_bus": 4,
+        "mipi_host": 0
+      },
+      {
+        "i2c_bus": 2,
+        "mipi_host": 2
+      },
+      {
+        "i2c_bus": 7,
+        "mipi_host": 3
+      },
+      {
+        "i2c_bus": 1,
+        "mipi_host": 1,
+	"Note": "Requires CSI expansion board"
+      }
+    ]
+  },
+  "board_301": {
+    "board_id": "301",
+    "camera_num": 2,
+    "cameras": [
+      {
+        "i2c_bus": 6,
+        "mipi_host": 0
+      },
+      {
+        "i2c_bus": 4,
+        "mipi_host": 2
+      }
+    ]
+  },
+  "board_302": {
+    "board_id": "302",
+    "camera_num": 2,
+    "cameras": [
+      {
+        "i2c_bus": 6,
+        "mipi_host": 0
+      },
+      {
+        "i2c_bus": 4,
+        "mipi_host": 2
+      }
+    ]
+  }
+}
+
+===== hobot conf =====
+i2c0:
+i2c1:
+i2c5:
+i2s1:
+spi1:
+spi2:
+serial1:
+serial2:
+serial3:
+serial6:
+pwm0:
+pwm1:
+pwm2:
+pwm3:
+===== boot config =====
+arm_boost=0
+governor=schedutil

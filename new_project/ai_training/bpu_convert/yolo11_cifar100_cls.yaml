@@ -1,0 +1,23 @@
+model_parameters:
+  onnx_model: "../models_A/best.onnx"
+  output_model_file_prefix: "yolo11n_cifar100_cls"
+  march: "bayes-e"
+
+input_parameters:
+  input_name: "images"
+  input_type_rt: "rgb"
+  input_layout_rt: "NCHW"
+  input_type_train: "rgb"
+  input_layout_train: "NCHW"
+  norm_type: "data_scale"
+  scale_value: 0.003921568627
+
+calibration_parameters:
+  cal_data_dir: "calibration_data"
+  calibration_type: "default"
+  max_iter: 64
+
+compiler_parameters:
+  compile_mode: "latency"
+  debug: false
+  optimize_level: "O3"

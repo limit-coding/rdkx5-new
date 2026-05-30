@@ -1,0 +1,124 @@
+"""
+Competition main chain:
+
+Livox MID360 -> FAST_LIO -> relative_pose_cpp -> fc_bridge_cpp -> XY frame 0x01
+mission_vision -> mission_task -> fc_bridge_cpp -> mission-status frame 0x02
+"""
+
+import os
+
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription, TimerAction
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch_ros.actions import Node
+
+
+def generate_launch_description():
+    livox_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory('livox_ros_driver2'),
+                'launch_ROS2',
+                'msg_MID360_launch.py',
+            )
+        )
+    )
+
+    fast_lio_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory('fast_lio'),
+                'launch',
+                'mapping.launch.py',
+            )
+        ),
+        launch_arguments={'rviz': 'false'}.items(),
+    )
+
+    usb_camera_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory('hobot_usb_cam'),
+                'launch',
+                'hobot_usb_cam.launch.py',
+            )
+        ),
+        launch_arguments={
+            'usb_video_device': '/dev/video0',
+            'usb_image_width': '1280',
+            'usb_image_height': '720',
+            'usb_pixel_format': 'mjpeg',
+            'usb_framerate': '30',
+        }.items(),
+    )
+
+    mid360_xy_node = Node(
+        package='lidar_fc_cpp',
+        executable='mid360_xy_cpp',
+        name='mid360_xy_node',
+        output='screen',
+    )
+
+    relative_pose_node = Node(
+        package='lidar_fc_cpp',
+        executable='relative_pose_cpp',
+        name='relative_pose_node',
+        output='screen',
+        parameters=[{
+            'invert_x': True,
+        }],
+    )
+
+    fc_bridge_node = Node(
+        package='lidar_fc_cpp',
+        executable='fc_bridge_cpp',
+        name='fc_bridge_node',
+        output='screen',
+        parameters=[{
+            'serial_port': '/dev/ttyFC',
+            'baudrate': 115200,
+            'send_freq': 20.0,
+            'status_send_freq': 10.0,
+            'max_xy_meters': 10.0,
+            'clamp_xy_instead_of_zero': True,
+        }],
+    )
+
+    mission_vision_node = Node(
+        package='camera',
+        executable='mission_vision',
+        name='mission_vision_node',
+        output='screen',
+        parameters=[{
+            'model_path': '/home/sunrise/project/camera/resource/yolo11_det.bin',
+            'image_topic': '/image',
+            'show': False,
+            'qr_confirm_frames': 3,
+            'target_confirm_frames': 3,
+            'target_release_frames': 5,
+        }],
+    )
+
+    mission_task_node = Node(
+        package='main',
+        executable='mission_task',
+        name='mission_task_node',
+        output='screen',
+        parameters=[{
+            'publish_period_sec': 0.1,
+        }],
+    )
+
+    return LaunchDescription([
+        livox_launch,
+        usb_camera_launch,
+        TimerAction(period=2.0, actions=[fast_lio_launch]),
+        TimerAction(period=4.0, actions=[
+            mid360_xy_node,
+            relative_pose_node,
+            fc_bridge_node,
+            mission_vision_node,
+            mission_task_node,
+        ]),
+    ])

@@ -1,0 +1,7 @@
+picture_target
+special_target
+ring
+obstacle
+landing_h
+red_light
+blue_light

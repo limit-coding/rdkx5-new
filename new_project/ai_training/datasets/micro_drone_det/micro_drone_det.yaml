@@ -1,0 +1,12 @@
+path: datasets/micro_drone_det
+train: images/train
+val: images/val
+
+names:
+  0: picture_target
+  1: special_target
+  2: ring
+  3: obstacle
+  4: landing_h
+  5: red_light
+  6: blue_light

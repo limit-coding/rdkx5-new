@@ -1,0 +1,37 @@
+===== sysfs video =====
+total 0
+drwxr-xr-x  2 root root 0 Nov 22  2023 .
+drwxr-xr-x 68 root root 0 Nov 22  2023 ..
+
+===== media-ctl =====
+Failed to enumerate /dev/media0 (-2)
+
+===== modules =====
+snd_soc_hobot_sound_duplex_host    24576  0
+snd_soc_simple_card_utils    28672  1 snd_soc_hobot_sound_duplex_host
+hobot_jpu              69632  0
+hobot_vpu             122880  0
+hobot_lpwm             45056  0
+hobot_codec_vnode      32768  0
+hobot_isi_sensor       32768  0
+hobot_gdc              36864  0
+hobot_deserial         45056  0
+vs_dw_crc              16384  2 hobot_gdc,vs_vse_nat
+vs_isp_nat             77824  1 vs_vse_nat
+hobot_mipidbg          28672  0
+hobot_mipicsi         126976  1 hobot_mipidbg
+hobot_camsys           36864  2 hobot_mipicsi,hobot_gdc
+hobot_mipiphy          49152  2 hobot_mipidbg,hobot_mipicsi
+hobot_sensor          163840  1 hobot_isi_sensor
+vs_ops_nat             16384  3 vs_isp_nat,vs_sif_nat,vs_vse_nat
+hobot_vin_vcon         45056  0
+hobot_vin_vnode        45056  4 hobot_mipicsi,vs_sif_nat,hobot_vin_vcon,hobot_lpwm
+hobot_osd              73728  0
+hobot_vio_common      114688  14 hobot_isi_sensor,vio_n2d,hobot_deserial,hobot_camsys,vs_isp_nat,hobot_vin_vnode,hobot_gdc,hobot_osd,hobot_codec_vnode,vs_sif_nat,hobot_vin_vcon,vs_vse_nat,hobot_sensor,hobot_lpwm
+vs_cam_ctrl            16384  4 vs_isp_nat,hobot_gdc,vs_sif_nat,vs_vse_nat
+vs_isc                 28672  13 vs_isp_nat,vs_sif_nat,vs_vse_nat
+uvcvideo              106496  0
+videobuf2_vmalloc      20480  1 uvcvideo
+videobuf2_memops       20480  1 videobuf2_vmalloc
+videobuf2_v4l2         32768  1 uvcvideo
+videobuf2_common       53248  4 videobuf2_vmalloc,videobuf2_v4l2,uvcvideo,videobuf2_memops

@@ -1,0 +1,17 @@
+[INFO] [launch]: All log files can be found below /home/sunrise/.ros/log/2026-05-06-13-24-41-413386-ubuntu-7150
+[INFO] [launch]: Default logging verbosity is set to INFO
+config_file_path is  /opt/tros/humble/lib/hobot_usb_cam/config/usb_camera_calibration.yaml
+Hobot shm pkg enables zero-copy with fastrtps profiles file: /opt/tros/humble/lib/hobot_shm/config/shm_fastdds.xml
+Hobot shm pkg sets RMW_FASTRTPS_USE_QOS_FROM_XML: 1
+env of RMW_FASTRTPS_USE_QOS_FROM_XML is  1 , ignore env setting
+[INFO] [hobot_usb_cam-1]: process started with pid [7151]
+[hobot_usb_cam-1] [WARN] [1778045081.936597577] [hobot_usb_cam]: framerate: 30
+[hobot_usb_cam-1] [WARN] [1778045081.937156325] [hobot_usb_cam]: pixel_format_name: mjpeg
+[hobot_usb_cam-1] [WARN] [1778045081.958201698] [hobot_usb_cam]: Camera calibration file: [/opt/tros/humble/lib/hobot_usb_cam/config/usb_camera_calibration.yaml] does not exist!
+[hobot_usb_cam-1] If you need calibration msg, please make sure the calibration file path is correct and the calibration file exists!
+[hobot_usb_cam-1] [WARN] [1778045082.052036235] [hobot_usb_cam]: This devices supproted formats:
+[hobot_usb_cam-1] [WARN] [1778045082.052271151] [hobot_usb_cam]: 	Motion-JPEG: 1920 x 1080 (30 Hz)
+[hobot_usb_cam-1] [WARN] [1778045082.052335525] [hobot_usb_cam]: 	Motion-JPEG: 1280 x 720 (30 Hz)
+[hobot_usb_cam-1] [WARN] [1778045082.052378234] [hobot_usb_cam]: 	YUYV 4:2:2: 1920 x 1080 (5 Hz)
+[hobot_usb_cam-1] [WARN] [1778045082.052422233] [hobot_usb_cam]: 	YUYV 4:2:2: 1280 x 720 (10 Hz)
+[hobot_usb_cam-1] [WARN] [1778045082.052462983] [hobot_usb_cam]: 	YUYV 4:2:2: 1280 x 720 (5 Hz)
