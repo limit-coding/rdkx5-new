@@ -22,18 +22,24 @@ from std_msgs.msg import Bool, String
 
 # ── PWM parameters ────────────────────────────────────────────────────────────
 SERVO_FREQ_HZ   = 50        # standard servo frequency
-DUTY_LOCKED     = 5.0       # 1 ms pulse  → locked / closed
-DUTY_RELEASE    = 10.0      # 2 ms pulse  → released / open
-HOLD_OPEN_SEC   = 1.5       # time to hold open before returning
+
+DUTY_BEGIN      = 2.0       #  400 us → home / reset position
+DUTY_FIRST      = 5.0       # 1000 us
+DUTY_SECOND     = 7.0       # 1400 us
+DUTY_THIRD      = 9.5       # 1900 us
+
+DUTY_LOCKED     = DUTY_BEGIN  # reset/init always returns to begin
+DUTY_RELEASE    = DUTY_THIRD  # open → third position
+HOLD_OPEN_SEC   = 1.5         # time to hold open before returning
 
 # ── GPIO / sysfs config ───────────────────────────────────────────────────────
 BOARD_PIN       = 32        # physical pin on 40-pin header (Hobot.GPIO BOARD mode)
 # sysfs fallback — adjust pwmchipN and channel index for your kernel
-SYSFS_CHIP      = "pwmchip0"
+SYSFS_CHIP      = "pwmchip0"   # Board Pin 32 = pwmchip0/pwm0 (confirmed on RDK X5)
 SYSFS_CHANNEL   = 0
 PERIOD_NS       = 20_000_000            # 20 ms → 50 Hz
-DUTY_LOCKED_NS  = int(PERIOD_NS * DUTY_LOCKED  / 100)   # 1 000 000 ns
-DUTY_RELEASE_NS = int(PERIOD_NS * DUTY_RELEASE / 100)   # 2 000 000 ns
+DUTY_LOCKED_NS  = int(PERIOD_NS * DUTY_LOCKED  / 100)   #  400 000 ns
+DUTY_RELEASE_NS = int(PERIOD_NS * DUTY_RELEASE / 100)   # 1 900 000 ns
 
 
 class _HobotPWM:
@@ -43,7 +49,6 @@ class _HobotPWM:
         import Hobot.GPIO as GPIO
         self._GPIO = GPIO
         GPIO.setmode(GPIO.BOARD)
-        GPIO.setup(pin, GPIO.OUT)
         self._pwm = GPIO.PWM(pin, freq)
         self._pwm.start(DUTY_LOCKED)
 

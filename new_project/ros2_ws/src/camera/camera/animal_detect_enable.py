@@ -15,7 +15,7 @@ from rclpy.node import Node
 from std_msgs.msg import Int32, Int32MultiArray, MultiArrayDimension, String
 
 
-DEFAULT_MODEL_PATH = "/home/sunrise/ros2/diansai/ws/src/camera/resource/yolo11_det.bin"
+DEFAULT_MODEL_PATH = "/home/sunrise/project/camera/resource/yolo11_det.bin"
 DEFAULT_NAMES = [
     "picture_target",
     "special_target",
@@ -224,7 +224,7 @@ class AnimalDetectNode(Node):
         self.declare_parameter("camera_index", 1)
         self.declare_parameter("width", 640)
         self.declare_parameter("height", 480)
-        self.declare_parameter("crop_size", 480)
+        self.declare_parameter("crop_size", 0)
         self.declare_parameter("conf", 0.3)
         self.declare_parameter("iou", 0.5)
         self.declare_parameter("rotate_180", True)

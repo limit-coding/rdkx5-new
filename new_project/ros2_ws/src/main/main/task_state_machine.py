@@ -291,8 +291,9 @@ class TaskStateMachine(Node):
 
         self.recognized_target_count += 1
         is_target = label in self.target_classes
+        # 奇数 = 不匹配不降落, 偶数 = 匹配降落
         task_state = 0x03 + (self.recognized_target_count - 1) * 2
-        if not is_target:
+        if is_target:
             task_state += 1
 
         self.set_task_status(task_state=task_state)
@@ -302,7 +303,7 @@ class TaskStateMachine(Node):
         self.target_candidate_count = 0
         self.get_logger().info(
             f"YOLO target confirmed: index={self.recognized_target_count}, "
-            f"label={label}, qr_target={is_target}, task_state=0x{task_state:02X}"
+            f"label={label}, match={is_target}, task_state=0x{task_state:02X}"
         )
 
 
