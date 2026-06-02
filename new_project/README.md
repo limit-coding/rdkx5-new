@@ -59,6 +59,67 @@ YOLO BPU inference node:
 ros2 run camera animal_detect
 ```
 
+Mac local QR -> YOLO test without ROS2/RDK dependencies:
+
+```bash
+python3 new_project/local_mission_vision.py --select-camera
+```
+
+To only list usable camera indices:
+
+```bash
+python3 new_project/local_mission_vision.py --list-cameras
+```
+
+The local script uses the selected camera first for QR recognition. After the
+QR mission is stable for 3 frames, it switches the same camera stream into YOLO
+recognition. If macOS blocks the camera, allow the terminal app running Python
+in System Settings -> Privacy & Security -> Camera, then rerun the command.
+
+RDK X5 camera stream to Mac over Ethernet:
+
+```bash
+# Do not change the RDK X5 eth0 static IP if it is bound to the MID360 radar.
+# First check the RDK address without modifying it:
+ip -br addr show eth0
+
+# Mac side: add an address in the same subnet to the USB Ethernet adapter.
+# Example if the RDK is 172.20.10.2/24:
+sudo ifconfig en8 alias 172.20.10.1 netmask 255.255.255.0
+ping 172.20.10.2
+
+# Example if the RDK/radar subnet is 192.168.1.x/24:
+# choose a free Mac address that does not duplicate the RDK or radar.
+sudo ifconfig en8 alias 192.168.1.250 netmask 255.255.255.0
+```
+
+Start the RDK USB camera and MJPEG server:
+
+```bash
+source /opt/ros/humble/setup.bash
+source /opt/tros/humble/setup.bash
+
+ros2 launch hobot_usb_cam hobot_usb_cam.launch.py \
+  usb_video_device:=/dev/video0 \
+  usb_image_width:=1280 \
+  usb_image_height:=720 \
+  usb_pixel_format:=mjpeg \
+  usb_framerate:=30
+
+# In another RDK terminal.
+source /opt/ros/humble/setup.bash
+source /opt/tros/humble/setup.bash
+python3 /home/sunrise/project/rdk_deploy/mjpeg_view.py --port 8080 --fps 20 --quality 75
+```
+
+Then open `http://<RDK_IP>:8080` in the Mac browser, or run Mac-side QR ->
+YOLO recognition from the RDK camera stream. For example, if the RDK is
+`172.20.10.2`:
+
+```bash
+python3 new_project/local_mission_vision.py --source http://172.20.10.2:8080/stream
+```
+
 ## AI Training
 
 The CIFAR-100 source used by the competition picture targets:
