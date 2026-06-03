@@ -11,7 +11,7 @@ Group=sunrise
 SupplementaryGroups=dialout
 WorkingDirectory=/home/sunrise/project
 ExecStartPre=/bin/udevadm settle --timeout=15
-ExecStart=/bin/bash /home/sunrise/project/start_auto.sh
+ExecStart=/bin/bash /home/sunrise/project/start_all.sh
 Restart=always
 RestartSec=5
 KillSignal=SIGINT

@@ -15,7 +15,7 @@ from rclpy.node import Node
 from std_msgs.msg import Int32, Int32MultiArray, MultiArrayDimension, String
 
 
-DEFAULT_MODEL_PATH = "/home/sunrise/project/camera/resource/yolo11_det.bin"
+DEFAULT_MODEL_PATH = "/home/sunrise/project/camera/resource/yolo11_det.onnx"
 DEFAULT_NAMES = [
     "picture_target",
     "special_target",
@@ -141,53 +141,39 @@ class Yolo11BpuDetector:
         return self._postprocess(tensors)
 
     def _postprocess(self, outputs: list[np.ndarray]) -> list[Detection]:
-        if len(outputs) < 6:
-            raise RuntimeError(f"YOLO11 detector expects at least 6 outputs, got {len(outputs)}")
+        # single combined output: (1, num_classes+4, N, 1)
+        # bbox channels already decoded to pixel coords (cx, cy, w, h)
+        raw = np.asarray(outputs[0]).reshape(self.num_classes + 4, -1).T  # (N, 4+C)
 
-        all_boxes: list[np.ndarray] = []
-        all_scores: list[np.ndarray] = []
-        all_ids: list[np.ndarray] = []
+        cx, cy, w, h = raw[:, 0], raw[:, 1], raw[:, 2], raw[:, 3]
+        cls_scores = sigmoid(raw[:, 4:])
 
-        for level, stride in enumerate(self.strides):
-            cls = outputs[level * 2].reshape(-1, self.num_classes)
-            bbox = outputs[level * 2 + 1].reshape(-1, 64)
-            max_logits = np.max(cls, axis=1)
-            valid = np.flatnonzero(max_logits >= self.conf_logit)
-            if valid.size == 0:
-                continue
+        max_scores = cls_scores.max(axis=1)
+        class_ids = cls_scores.argmax(axis=1)
 
-            ids = np.argmax(cls[valid], axis=1)
-            scores = sigmoid(max_logits[valid])
-            dist = np.sum(
-                softmax(bbox[valid].reshape(-1, 4, 16), axis=2) * self.dfl_weights,
-                axis=2,
-            )
-            anchors = self.anchors[stride][valid]
-            x1y1 = anchors - dist[:, 0:2]
-            x2y2 = anchors + dist[:, 2:4]
-            boxes = np.hstack([x1y1, x2y2]) * stride
-
-            all_boxes.append(boxes.astype(np.float32))
-            all_scores.append(scores.astype(np.float32))
-            all_ids.append(ids.astype(np.int32))
-
-        if not all_boxes:
+        valid = np.flatnonzero(max_scores >= self.conf)
+        if valid.size == 0:
             return []
 
-        boxes = np.concatenate(all_boxes, axis=0)
-        scores = np.concatenate(all_scores, axis=0)
-        ids = np.concatenate(all_ids, axis=0)
-        nms_boxes = boxes.copy()
-        nms_boxes[:, 2] = boxes[:, 2] - boxes[:, 0]
-        nms_boxes[:, 3] = boxes[:, 3] - boxes[:, 1]
-        keep = cv2.dnn.NMSBoxes(nms_boxes.tolist(), scores.tolist(), self.conf, self.iou)
+        cx, cy, w, h = cx[valid], cy[valid], w[valid], h[valid]
+        max_scores = max_scores[valid]
+        class_ids = class_ids[valid]
+
+        x1 = cx - w / 2;  y1 = cy - h / 2
+        x2 = cx + w / 2;  y2 = cy + h / 2
+        boxes = np.stack([x1, y1, x2, y2], axis=1).astype(np.float32)
+
+        keep = cv2.dnn.NMSBoxes(
+            np.stack([x1, y1, w, h], axis=1).tolist(),
+            max_scores.tolist(), self.conf, self.iou,
+        )
         if len(keep) == 0:
             return []
 
         detections: list[Detection] = []
         for idx in np.asarray(keep).reshape(-1):
             bbox = self._restore_box(boxes[int(idx)])
-            detections.append(Detection(int(ids[int(idx)]), float(scores[int(idx)]), bbox))
+            detections.append(Detection(int(class_ids[int(idx)]), float(max_scores[int(idx)]), bbox))
         return detections
 
     def _restore_box(self, box: np.ndarray) -> tuple[int, int, int, int]:

@@ -26,9 +26,9 @@ using Clock = std::chrono::steady_clock;
 //   输出：串口二进制帧，发到 /dev/ttyFC，单位转成厘米和度。
 //
 // 串口帧格式：
-//   AA FF 01 06 X_H X_L Y_H Y_L YAW_H YAW_L CHECKSUM
-//   X/Y   : int16，大端，高字节在前，单位 cm
-//   YAW   : int16，大端，高字节在前，单位 degree
+//   AA FF 01 06 X_L X_H Y_L Y_H YAW_L YAW_H CHECKSUM
+//   X/Y   : int16，小端，低字节在前，单位 cm
+//   YAW   : int16，小端，低字节在前，单位 degree
 //   CHECKSUM: 前 10 个字节累加后取低 8 位
 //
 // 安全策略：
@@ -132,13 +132,13 @@ private:
     return static_cast<int16_t>(std::clamp(value, -32768, 32767));
   }
 
-  static void putS16Be(std::array<uint8_t, 11> & frame, size_t index, int16_t value)
+  static void putS16Le(std::array<uint8_t, 11> & frame, size_t index, int16_t value)
   {
-    // 飞控解析端按“高字节在前”读取，所以这里手动拆成 big-endian。
+    // 飞控解析端按“低字节在前”读取，所以这里手动拆成 little-endian。
     // 负数先转成 uint16_t 后再拆字节，可以保留二进制补码表示。
     const auto raw = static_cast<uint16_t>(value);
-    frame[index] = static_cast<uint8_t>((raw >> 8) & 0xFF);
-    frame[index + 1] = static_cast<uint8_t>(raw & 0xFF);
+    frame[index] = static_cast<uint8_t>(raw & 0xFF);
+    frame[index + 1] = static_cast<uint8_t>((raw >> 8) & 0xFF);
   }
 
   bool tryOpenSerial()
@@ -327,9 +327,9 @@ private:
     frame[1] = 0xFF;
     frame[2] = 0x01;
     frame[3] = 0x06;
-    putS16Be(frame, 4, x_cm);
-    putS16Be(frame, 6, y_cm);
-    putS16Be(frame, 8, yaw);
+    putS16Le(frame, 4, x_cm);
+    putS16Le(frame, 6, y_cm);
+    putS16Le(frame, 8, yaw);
 
     // 校验和：前 10 个字节相加，溢出部分自然丢掉，只保留低 8 位。
     uint8_t checksum = 0;

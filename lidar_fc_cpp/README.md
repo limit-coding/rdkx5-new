@@ -63,10 +63,10 @@ ros2 param set /fc_bridge_node clamp_xy_instead_of_zero true
 The serial frame follows the ANO_LX_FC fixed-point positioning parser:
 
 ```text
-AA FF 01 06 X_H X_L Y_H Y_L YAW_H YAW_L CHECKSUM
+AA FF 01 06 X_L X_H Y_L Y_H YAW_L YAW_H CHECKSUM
 ```
 
-`X` and `Y` are signed int16 centimeters. `YAW` is signed int16 degrees. Multi-byte fields use high byte first to match the ANO_LX_FC `topoint()` parser. The default serial send frequency is `20Hz`.
+`X` and `Y` are signed int16 centimeters. `YAW` is signed int16 degrees. Multi-byte fields use low byte first to match the ANO_LX_FC parser. The default serial send frequency is `20Hz`.
 
 ## Build
 

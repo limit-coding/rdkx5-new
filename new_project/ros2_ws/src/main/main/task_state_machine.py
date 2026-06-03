@@ -11,13 +11,13 @@ class TaskStateMachine(Node):
     def __init__(self):
         super().__init__("task_state_machine")
 
-        self.declare_parameter("qr_confirm_frames", 3)
+        self.declare_parameter("qr_confirm_frames", 1)
         self.declare_parameter("target_confirm_frames", 3)
         self.declare_parameter("target_disappear_frames", 5)
         self.declare_parameter("target_max_count", 4)
         self.declare_parameter(
             "ignored_labels",
-            ["ring", "landing_h", "red_light", "blue_light", "obstacle"],
+            ["ring", "landing_h", "red_light", "blue_light", "obstacle", "cloud", "keyboard"],
         )
 
         self.qr_confirm_frames = int(self.get_parameter("qr_confirm_frames").value)
@@ -46,12 +46,21 @@ class TaskStateMachine(Node):
             self.vision_detections_callback,
             10,
         )
+        self.pr_select_sub = self.create_subscription(
+            Int32,
+            "/pr_select",
+            self.pr_select_callback,
+            10,
+        )
 
         self.task_state = 0x01
         self.landing_state = 0x01
         self.target_classes = set()
         self.landing_side = ""
         self.qr_task_ready = False
+        self._yolo_active = False
+        self._current_fc_cmd = 0  # 当前飞控命令 2/3/4/5，决定发哪个 task_state
+        self._cmds_done = set()   # 已经发出结果的命令，重复收到直接忽略
 
         self._qr_candidate_text = ""
         self._qr_candidate_count = 0
@@ -191,18 +200,38 @@ class TaskStateMachine(Node):
 
         landing_state = 0x02 if self.landing_side == "left" else 0x03
         self.set_task_status(task_state=0x02, landing_state=landing_state)
-        self.publish_yolo_enable(True)
         self.publish_qr_enable(False)
         self.get_logger().info(
             f"QR task confirmed: target_classes={sorted(self.target_classes)}, "
-            f"landing_side={self.landing_side}"
+            f"landing_side={self.landing_side}, 等待飞控触发识别命令"
         )
+
+    def pr_select_callback(self, msg):
+        cmd = int(msg.data)
+        if cmd not in (2, 3, 4, 5):
+            return
+        if not self.qr_task_ready:
+            self.get_logger().warn(f'飞控发命令 {cmd} 但二维码尚未确认，忽略')
+            return
+        if self._yolo_active:
+            return
+        if cmd in self._cmds_done:  # 已经发过结果，忽略重复命令
+            return
+        if self._yolo_active:
+            return
+        self.clear_target_lock()
+        self._current_fc_cmd = cmd
+        self._yolo_active = True
+        self.publish_yolo_enable(True)
+        self.get_logger().info(f'飞控命令 {cmd} → 开始识别第 {cmd - 1} 个靶子')
 
     def qr_text_callback(self, msg):
         self.update_qr_task_candidate(msg.data)
 
     def vision_detections_callback(self, msg):
         if not self.qr_task_ready:
+            return
+        if not self._yolo_active:
             return
 
         try:
@@ -250,9 +279,15 @@ class TaskStateMachine(Node):
             self.handle_no_task_target()
             return
 
+        is_target = self.label_matches_target(label)
+
         if self.locked_target_label:
+            locked_is_target = self.label_matches_target(self.locked_target_label)
             if label == self.locked_target_label:
                 self.locked_target_missing_count = 0
+                return
+            if is_target and not locked_is_target:
+                self.correct_locked_target(label)
                 return
             self.locked_target_missing_count += 1
             if self.locked_target_missing_count < self.target_disappear_frames:
@@ -285,25 +320,57 @@ class TaskStateMachine(Node):
         self.target_candidate_label = ""
         self.target_candidate_count = 0
 
+    def label_matches_target(self, label):
+        label = str(label).strip().lower()
+        if not label:
+            return False
+        return any(
+            target == label or target in label or label in target
+            for target in self.target_classes
+        )
+
     def confirm_new_task_target(self, label):
         if self.recognized_target_count >= self.target_max_count:
             return
 
         self.recognized_target_count += 1
-        is_target = label in self.target_classes
-        # 奇数 = 不匹配不降落, 偶数 = 匹配降落
-        task_state = 0x03 + (self.recognized_target_count - 1) * 2
-        if is_target:
-            task_state += 1
+        is_target = self.label_matches_target(label)
+        # cmd=2→03/04, cmd=3→05/06, cmd=4→07/08, cmd=5→09/0A
+        base = 0x03 + (self._current_fc_cmd - 2) * 2
+        task_state = base + (1 if is_target else 0)
 
         self.set_task_status(task_state=task_state)
         self.locked_target_label = label
         self.locked_target_missing_count = 0
         self.target_candidate_label = ""
         self.target_candidate_count = 0
+        self._yolo_active = False
+        self._cmds_done.add(self._current_fc_cmd)
+        self.publish_yolo_enable(False)
         self.get_logger().info(
             f"YOLO target confirmed: index={self.recognized_target_count}, "
-            f"label={label}, match={is_target}, task_state=0x{task_state:02X}"
+            f"label={label}, match={is_target}, task_state=0x{task_state:02X}, 等待飞控下一个命令"
+        )
+
+    def correct_locked_target(self, label):
+        if self.recognized_target_count <= 0:
+            self.confirm_new_task_target(label)
+            return
+
+        base = 0x03 + (self._current_fc_cmd - 2) * 2
+        task_state = base + 1  # 修正为匹配
+        self.set_task_status(task_state=task_state)
+        old_label = self.locked_target_label
+        self.locked_target_label = label
+        self.locked_target_missing_count = 0
+        self.target_candidate_label = ""
+        self.target_candidate_count = 0
+        self._yolo_active = False
+        self._cmds_done.add(self._current_fc_cmd)
+        self.publish_yolo_enable(False)
+        self.get_logger().info(
+            f"YOLO target corrected: index={self.recognized_target_count}, "
+            f"old_label={old_label}, label={label}, task_state=0x{task_state:02X}, 等待飞控下一个命令"
         )
 
 
