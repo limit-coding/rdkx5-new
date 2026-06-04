@@ -94,7 +94,7 @@ class Cifar100BpuClassifier:
     def predict_topk(
         self, bgr: np.ndarray, k: int = 5, qr_targets: set | None = None
     ) -> list[tuple[int, str, float]]:
-        rotations = [None, cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_180, cv2.ROTATE_90_COUNTERCLOCKWISE]
+        rotations = [None]
         best_probs: np.ndarray | None = None
         best_score = -1.0
         for rot_code in rotations:

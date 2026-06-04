@@ -6,6 +6,7 @@
 """
 
 import math
+import os
 import struct
 import threading
 import time
@@ -31,17 +32,30 @@ class FcSerialBridge(Node):
         self.declare_parameter('send_freq', 20.0)
         self.declare_parameter('max_xy_meters', 10.0)
         self.declare_parameter('valid_timeout_sec', 0.5)
+        self.declare_parameter('fc_cmd_log_interval_sec', 2.0)
+        self.declare_parameter('tx_log_interval_sec', 1.0)
+        self.declare_parameter('tx_log_path', '/tmp/flight_logs/fc_tx.log')
 
         self._port = self.get_parameter('serial_port').value
         self._baud = int(self.get_parameter('baudrate').value)
         send_freq = float(self.get_parameter('send_freq').value)
         self._max_xy = float(self.get_parameter('max_xy_meters').value)
         self._valid_timeout = float(self.get_parameter('valid_timeout_sec').value)
+        self._cmd_log_interval = max(
+            0.1, float(self.get_parameter('fc_cmd_log_interval_sec').value))
+        self._tx_log_interval = max(
+            0.1, float(self.get_parameter('tx_log_interval_sec').value))
+        self._tx_log_path = str(self.get_parameter('tx_log_path').value)
 
         # 串口对象，写操作用锁保护（读在独立线程，不与写竞争）
         self._ser = None
         self._write_lock = threading.Lock()
+        self._tx_log_lock = threading.Lock()
         self._reconnect_timer = None
+        self._last_cmd_log_t = {}
+        self._last_tx_log_t = {}
+        self._last_tx_change_key = {}
+        self._init_tx_log()
         self._try_open()
 
         # ── 发布：飞控 → 电脑 ────────────────────
@@ -246,7 +260,8 @@ class FcSerialBridge(Node):
         elif typ == 1 and len(body) >= 1:
             cmd = body[0]
             self._prselect_pub.publish(Int32(data=cmd))
-            self.get_logger().info(f'飞控命令: 0x{cmd:02X} ({cmd})')
+            if self._should_log_fc_cmd(cmd):
+                self.get_logger().info(f'飞控命令: 0x{cmd:02X} ({cmd})')
             if cmd in DROP_COMMANDS:
                 self._handle_drop_command(cmd)
 
@@ -319,7 +334,6 @@ class FcSerialBridge(Node):
                 f'位置帧 -> X={xc}cm Y={yc}cm YAW={yaw_deg:.1f}° | '
                 f'{" ".join(f"{b:02X}" for b in frame)}'
             )
-
     # ═══════════════════════════════════════════════
     # 发送：任务状态帧 AA FF 02 02 [task] [landing] [sum]
     # ═══════════════════════════════════════════════
@@ -336,7 +350,13 @@ class FcSerialBridge(Node):
             ts = self._task_state
             ls = self._landing_state
         frame = bytes([0xAA, 0xFF, 0x02, 0x02, ts, ls])
-        self._write(frame + bytes([sum(frame) & 0xFF]))
+        full_frame = frame + bytes([sum(frame) & 0xFF])
+        if self._write(full_frame):
+            self._log_tx_throttled(
+                'task',
+                full_frame,
+                f'任务状态帧 task=0x{ts:02X} landing=0x{ls:02X}',
+                change_key=(ts, ls))
 
     # ═══════════════════════════════════════════════
     # 接收投放命令 0x0B 后立即 ACK，并触发本机投放
@@ -347,6 +367,7 @@ class FcSerialBridge(Node):
     def _handle_drop_command(self, cmd: int):
         ack = self._make_frame(DROP_ACK_TYPE, bytes([cmd & 0xFF]))
         if self._write(ack):
+            self._append_tx_log('drop_ack', ack, f'投放命令ACK cmd=0x{cmd:02X}')
             self.get_logger().info(
                 f'投放命令 ACK -> {" ".join(f"{b:02X}" for b in ack)}'
             )
@@ -365,8 +386,10 @@ class FcSerialBridge(Node):
         if msg.data.strip().lower() != 'lock':
             return
         data = b'lock'
-        self._write(self._make_frame(0x81, data))
-        self.get_logger().info('发送上锁帧')
+        frame = self._make_frame(0x81, data)
+        if self._write(frame):
+            self._append_tx_log('lock', frame, '上锁帧')
+            self.get_logger().info('发送上锁帧')
 
     # ═══════════════════════════════════════════════
     # 工具
@@ -375,6 +398,61 @@ class FcSerialBridge(Node):
     def _make_frame(self, frame_type: int, payload: bytes = b'') -> bytes:
         base = bytes([0xAA, 0xFF, frame_type & 0xFF, len(payload) & 0xFF]) + payload
         return base + bytes([sum(base) & 0xFF])
+
+    def _should_log_fc_cmd(self, cmd: int) -> bool:
+        if cmd != 0x01:
+            return True
+        now = time.time()
+        last = self._last_cmd_log_t.get(cmd, 0.0)
+        if now - last < self._cmd_log_interval:
+            return False
+        self._last_cmd_log_t[cmd] = now
+        return True
+
+    def _init_tx_log(self):
+        try:
+            log_dir = os.path.dirname(self._tx_log_path)
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
+            with open(self._tx_log_path, 'a', encoding='utf-8') as f:
+                f.write(f'--- fc_bridge TX log start {self._time_text()} ---\n')
+        except Exception as e:
+            self.get_logger().warn(f'发送帧日志初始化失败: {e}')
+
+    def _time_text(self) -> str:
+        return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+
+    def _hex(self, frame: bytes) -> str:
+        return ' '.join(f'{b:02X}' for b in frame)
+
+    def _append_tx_log(self, kind: str, frame: bytes, detail: str):
+        line = f'[{self._time_text()}] TX {kind}: {detail} | {self._hex(frame)}\n'
+        try:
+            with self._tx_log_lock:
+                with open(self._tx_log_path, 'a', encoding='utf-8') as f:
+                    f.write(line)
+        except Exception as e:
+            self.get_logger().warn(f'发送帧日志写入失败: {e}')
+
+    def _log_tx_throttled(
+        self,
+        kind: str,
+        frame: bytes,
+        detail: str,
+        change_key=None,
+    ):
+        now = time.time()
+        changed = (
+            change_key is not None
+            and self._last_tx_change_key.get(kind) != change_key
+        )
+        last = self._last_tx_log_t.get(kind, 0.0)
+        if not changed and now - last < self._tx_log_interval:
+            return
+        self._last_tx_log_t[kind] = now
+        if change_key is not None:
+            self._last_tx_change_key[kind] = change_key
+        self._append_tx_log(kind, frame, detail)
 
     def _euler_to_quat(self, roll_deg, pitch_deg, yaw_deg) -> Quaternion:
         r = math.radians(roll_deg)

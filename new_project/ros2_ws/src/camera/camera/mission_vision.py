@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from collections import deque
 from pathlib import Path
 
 import cv2
@@ -12,7 +13,7 @@ from hobot_vio import libsrcampy as srcampy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
-from std_msgs.msg import String
+from std_msgs.msg import Int32, String
 
 from camera.cifar100_cls_enable import Cifar100BpuClassifier, TargetCenterCropper
 from camera.qr_detector import decode_jpeg_bytes
@@ -130,6 +131,14 @@ class MissionVisionNode(Node):
         self.ring_seen_frames = 0
         self.last_ring_log_time = 0.0
         self.qr_target_classes: set[str] = set()
+        self._pic_enabled = False
+        self._cached_label = ""
+        self._cached_score = 0.0
+        # 滑动窗口：持续缓存最近10帧里QR匹配的结果，02到来时直接取
+        self._recent_qr_results: deque[tuple[str, float]] = deque(maxlen=10)
+        self._collect_count = 0
+        self._collect_results: list[tuple[str, float]] = []
+        self.create_subscription(Int32, "/pic_enable", self._on_pic_enable, 10)
 
         src = "direct camera" if self.camera is not None else f"topic {self.image_topic}"
         self.get_logger().info(f"mission vision ready: {self.phase.upper()} phase ({src})")
@@ -168,6 +177,29 @@ class MissionVisionNode(Node):
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 rclpy.shutdown()
 
+    def _on_pic_enable(self, msg: Int32) -> None:
+        enabled = bool(int(msg.data))
+        if enabled and not self._pic_enabled:
+            self.latched_target = ""
+            self.target_candidate = ""
+            self.target_candidate_frames = 0
+            self.target_empty_frames = 0
+            self._collect_count = 0
+            self._collect_results = []
+            if self._recent_qr_results:
+                best_label, best_score = max(self._recent_qr_results, key=lambda x: x[1])
+                self.target_event_pub.publish(String(data=best_label))
+                self.latched_target = best_label
+                self.get_logger().info(
+                    f"pic_enable=1 -> 使用02前{len(self._recent_qr_results)}帧缓存"
+                    f" -> 发布: {best_label} ({best_score:.3f})"
+                )
+            else:
+                self._collect_count = 5
+                self._collect_results = []
+                self.get_logger().info("pic_enable=1 -> 无02前缓存，开始采集5帧...")
+        self._pic_enabled = enabled
+
     def _process_qr(self, frame: np.ndarray) -> None:
         text, _, _ = self.qr_detector.detectAndDecode(frame)
         text = text.strip()
@@ -189,6 +221,9 @@ class MissionVisionNode(Node):
 
         class1, class2, landing_side = mission
         self.qr_target_classes = {class1.strip().lower(), class2.strip().lower()}
+        self._cached_label = ""
+        self._cached_score = 0.0
+        self._recent_qr_results.clear()
         payload = {
             "valid": True,
             "confirmed": True,
@@ -334,6 +369,41 @@ class MissionVisionNode(Node):
         top3 = "  ".join(f"{n}:{s*100:.0f}%" for _, n, s in topk[:3])
         qr_info = f"  QR={label}:{score*100:.0f}%@{reason}" if is_qr_target else "  no-qr-match"
         self.debug_pub.publish(String(data=top3 + qr_info))
+        # 滑动窗口：持续记录QR匹配结果，供02到来时使用
+        if is_qr_target:
+            self._recent_qr_results.append((label, score))
+        # 缓存历史最高分（只用于日志）
+        if is_qr_target and score > self._cached_score:
+            self._cached_label = label
+            self._cached_score = score
+        # 每2秒打一次中间识别结果，方便调试
+        now = time.time()
+        if not hasattr(self, '_last_cls_log_t') or now - self._last_cls_log_t >= 2.0:
+            self._last_cls_log_t = now
+            cache_hint = f"  cache={self._cached_label}:{self._cached_score*100:.0f}%" if self._cached_label else "  cache=none"
+            self.get_logger().info(f"CLS  {top3}{cache_hint}")
+        # 飞控未下达识别命令时不发结果
+        if not self._pic_enabled:
+            return
+        # 02到来后采集最近5帧，从中选最优QR匹配结果发布
+        if self._collect_count > 0:
+            frame_idx = 6 - self._collect_count
+            if is_qr_target:
+                self._collect_results.append((label, score))
+            qr_hint = f"  QR={label}:{score*100:.0f}%" if is_qr_target else "  no-qr-match"
+            self.get_logger().info(
+                f"采集[{frame_idx}/5] top1={topk[0][1]}:{topk[0][2]*100:.0f}%{qr_hint}"
+            )
+            self._collect_count -= 1
+            if self._collect_count == 0:
+                if self._collect_results:
+                    best_label, best_score = max(self._collect_results, key=lambda x: x[1])
+                    self.target_event_pub.publish(String(data=best_label))
+                    self.latched_target = best_label
+                    self.get_logger().info(f"5帧采集完 -> 发布: {best_label} ({best_score:.3f})")
+                else:
+                    self.get_logger().info("5帧采集完 -> 无QR匹配，继续识别...")
+            return
         # When QR targets are known, only confirm QR-matched labels
         if self.qr_target_classes and not is_qr_target:
             self.target_candidate = ""
