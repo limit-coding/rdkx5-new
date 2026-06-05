@@ -81,7 +81,7 @@ class MissionVisionNode(Node):
         self.declare_parameter("target_rank_min_score", 0.004)
         self.declare_parameter("target_collect_frames", 5)
         self.declare_parameter("qr_target_min_score", 0.1)
-        self.declare_parameter("require_ring", True)
+        self.declare_parameter("require_ring", False)
         self.declare_parameter("ring_hough_param2", 28)
         self.declare_parameter("ring_white_s_max", 55)
         self.declare_parameter("ring_white_v_min", 160)
