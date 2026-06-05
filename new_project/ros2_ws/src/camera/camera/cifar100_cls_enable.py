@@ -5,8 +5,13 @@ from pathlib import Path
 import cv2
 import numpy as np
 import rclpy
-from hobot_vio import libsrcampy as srcampy
 from rclpy.node import Node
+try:
+    from hobot_vio import libsrcampy as srcampy
+    HAS_HOBOT = True
+except ImportError:
+    srcampy = None
+    HAS_HOBOT = False
 from std_msgs.msg import Int32, Int32MultiArray, MultiArrayDimension, String
 
 

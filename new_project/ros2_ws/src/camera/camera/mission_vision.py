@@ -9,8 +9,13 @@ from pathlib import Path
 import cv2
 import numpy as np
 import rclpy
-from hobot_vio import libsrcampy as srcampy
 from rclpy.executors import ExternalShutdownException
+try:
+    from hobot_vio import libsrcampy as srcampy
+    HAS_HOBOT = True
+except ImportError:
+    srcampy = None
+    HAS_HOBOT = False
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Int32, String
@@ -74,6 +79,12 @@ class MissionVisionNode(Node):
         self.declare_parameter("ignored_target_labels", ["cloud", "keyboard"])
         self.declare_parameter("target_rank_k", 20)
         self.declare_parameter("target_rank_min_score", 0.004)
+        self.declare_parameter("target_collect_frames", 5)
+        self.declare_parameter("qr_target_min_score", 0.1)
+        self.declare_parameter("require_white_ring", True)
+        self.declare_parameter("white_ring_s_max", 55)
+        self.declare_parameter("white_ring_v_min", 170)
+        self.declare_parameter("white_ring_fill_ratio", 0.25)
 
         cls_model_path = str(self.get_parameter("cls_model_path").value)
         cls_names_path = str(self.get_parameter("cls_names_path").value)
@@ -96,6 +107,12 @@ class MissionVisionNode(Node):
         }
         self.target_rank_k = max(1, int(self.get_parameter("target_rank_k").value))
         self.target_rank_min_score = max(0.0, float(self.get_parameter("target_rank_min_score").value))
+        self.target_collect_frames = max(1, int(self.get_parameter("target_collect_frames").value))
+        self.qr_target_min_score = max(0.0, float(self.get_parameter("qr_target_min_score").value))
+        self.require_white_ring = bool(self.get_parameter("require_white_ring").value)
+        self.white_ring_s_max = int(self.get_parameter("white_ring_s_max").value)
+        self.white_ring_v_min = int(self.get_parameter("white_ring_v_min").value)
+        self.white_ring_fill_ratio = float(self.get_parameter("white_ring_fill_ratio").value)
 
         if not Path(cls_model_path).exists():
             self.get_logger().warning(f"cls model not found: {cls_model_path}")
@@ -138,6 +155,7 @@ class MissionVisionNode(Node):
         self._recent_qr_results: deque[tuple[str, float]] = deque(maxlen=10)
         self._collect_count = 0
         self._collect_results: list[tuple[str, float]] = []
+        self._collect_fallback_results: list[tuple[str, float]] = []
         self.create_subscription(Int32, "/pic_enable", self._on_pic_enable, 10)
 
         src = "direct camera" if self.camera is not None else f"topic {self.image_topic}"
@@ -184,20 +202,15 @@ class MissionVisionNode(Node):
             self.target_candidate = ""
             self.target_candidate_frames = 0
             self.target_empty_frames = 0
-            self._collect_count = 0
             self._collect_results = []
-            if self._recent_qr_results:
-                best_label, best_score = max(self._recent_qr_results, key=lambda x: x[1])
-                self.target_event_pub.publish(String(data=best_label))
-                self.latched_target = best_label
-                self.get_logger().info(
-                    f"pic_enable=1 -> 使用02前{len(self._recent_qr_results)}帧缓存"
-                    f" -> 发布: {best_label} ({best_score:.3f})"
-                )
-            else:
-                self._collect_count = 5
-                self._collect_results = []
-                self.get_logger().info("pic_enable=1 -> 无02前缓存，开始采集5帧...")
+            self._collect_fallback_results = []
+            self._cached_label = ""
+            self._cached_score = 0.0
+            self._recent_qr_results.clear()
+            self._collect_count = self.target_collect_frames
+            self.get_logger().info(
+                f"pic_enable=1 -> 忽略触发前缓存，开始采集触发后{self.target_collect_frames}帧..."
+            )
         self._pic_enabled = enabled
 
     def _process_qr(self, frame: np.ndarray) -> None:
@@ -358,7 +371,48 @@ class MissionVisionNode(Node):
         contrast = max(abs(ring_mean - inner_mean), abs(ring_mean - outer_mean))
         return contrast >= 18.0
 
+    def _detect_white_ring(self, frame: np.ndarray) -> bool:
+        """Return True only when a white circular ring is visible in the frame."""
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        white_mask = cv2.inRange(
+            hsv,
+            np.array([0, 0, self.white_ring_v_min]),
+            np.array([180, self.white_ring_s_max, 255]),
+        )
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        masked = cv2.bitwise_and(gray, gray, mask=white_mask)
+        blurred = cv2.GaussianBlur(masked, (9, 9), 0)
+
+        h, w = gray.shape
+        min_dim = min(h, w)
+        min_r = max(12, int(min_dim * self.ring_min_radius_ratio))
+        max_r = max(min_r + 1, int(min_dim * self.ring_max_radius_ratio))
+
+        circles = cv2.HoughCircles(
+            blurred, cv2.HOUGH_GRADIENT,
+            dp=1.2,
+            minDist=max(30, min_dim // 3),
+            param1=60, param2=20,
+            minRadius=min_r, maxRadius=max_r,
+        )
+        if circles is None:
+            return False
+
+        for cx, cy, r in np.round(circles[0]).astype(int):
+            thickness = max(3, r // 6)
+            ring_mask = np.zeros(gray.shape, dtype=np.uint8)
+            cv2.circle(ring_mask, (cx, cy), r, 255, thickness)
+            ring_pixels = int(np.count_nonzero(ring_mask))
+            if ring_pixels == 0:
+                continue
+            white_pixels = int(np.count_nonzero(cv2.bitwise_and(white_mask, ring_mask)))
+            if white_pixels / ring_pixels >= self.white_ring_fill_ratio:
+                return True
+        return False
+
     def _process_cls(self, frame: np.ndarray) -> None:
+        if self.require_white_ring and not self._detect_white_ring(frame):
+            return
         crop = self.cropper.crop(frame)
         qr_targets = self.qr_target_classes if self.qr_target_classes else None
         topk = self.classifier.predict_topk(crop, k=max(self.target_rank_k, 5), qr_targets=qr_targets)
@@ -387,12 +441,14 @@ class MissionVisionNode(Node):
             return
         # 02到来后采集最近5帧，从中选最优QR匹配结果发布
         if self._collect_count > 0:
-            frame_idx = 6 - self._collect_count
+            frame_idx = self.target_collect_frames - self._collect_count + 1
             if is_qr_target:
                 self._collect_results.append((label, score))
+            elif label:
+                self._collect_fallback_results.append((label, score))
             qr_hint = f"  QR={label}:{score*100:.0f}%" if is_qr_target else "  no-qr-match"
             self.get_logger().info(
-                f"采集[{frame_idx}/5] top1={topk[0][1]}:{topk[0][2]*100:.0f}%{qr_hint}"
+                f"采集[{frame_idx}/{self.target_collect_frames}] top1={topk[0][1]}:{topk[0][2]*100:.0f}%{qr_hint}"
             )
             self._collect_count -= 1
             if self._collect_count == 0:
@@ -400,9 +456,22 @@ class MissionVisionNode(Node):
                     best_label, best_score = max(self._collect_results, key=lambda x: x[1])
                     self.target_event_pub.publish(String(data=best_label))
                     self.latched_target = best_label
-                    self.get_logger().info(f"5帧采集完 -> 发布: {best_label} ({best_score:.3f})")
+                    self.get_logger().info(
+                        f"{self.target_collect_frames}帧采集完 -> 有QR匹配，发布: {best_label} ({best_score:.3f})"
+                    )
+                elif self._collect_fallback_results:
+                    best_label, best_score = max(self._collect_fallback_results, key=lambda x: x[1])
+                    self.target_event_pub.publish(String(data=best_label))
+                    self.latched_target = best_label
+                    self.get_logger().info(
+                        f"{self.target_collect_frames}帧采集完 -> 无QR匹配，发布非匹配结果: {best_label} ({best_score:.3f})"
+                    )
                 else:
-                    self.get_logger().info("5帧采集完 -> 无QR匹配，继续识别...")
+                    self.target_event_pub.publish(String(data="no_match"))
+                    self.latched_target = "no_match"
+                    self.get_logger().info(
+                        f"{self.target_collect_frames}帧采集完 -> 无有效分类，发布: no_match"
+                    )
             return
         # When QR targets are known, only confirm QR-matched labels
         if self.qr_target_classes and not is_qr_target:
@@ -452,7 +521,7 @@ class MissionVisionNode(Node):
         for rank, (_, raw_label, raw_score) in enumerate(topk[: self.target_rank_k], 1):
             label = str(raw_label).strip()
             score = float(raw_score)
-            if score < self.target_rank_min_score:
+            if score < max(self.target_rank_min_score, self.qr_target_min_score):
                 continue
             matched = self._match_qr_target(label)
             if matched:
