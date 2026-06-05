@@ -81,10 +81,10 @@ class MissionVisionNode(Node):
         self.declare_parameter("target_rank_min_score", 0.004)
         self.declare_parameter("target_collect_frames", 5)
         self.declare_parameter("qr_target_min_score", 0.1)
-        self.declare_parameter("require_white_ring", True)
-        self.declare_parameter("white_ring_s_max", 55)
-        self.declare_parameter("white_ring_v_min", 170)
-        self.declare_parameter("white_ring_fill_ratio", 0.25)
+        self.declare_parameter("require_ring", True)
+        self.declare_parameter("ring_hough_param2", 28)
+        self.declare_parameter("ring_white_s_max", 55)
+        self.declare_parameter("ring_white_v_min", 160)
 
         cls_model_path = str(self.get_parameter("cls_model_path").value)
         cls_names_path = str(self.get_parameter("cls_names_path").value)
@@ -109,10 +109,10 @@ class MissionVisionNode(Node):
         self.target_rank_min_score = max(0.0, float(self.get_parameter("target_rank_min_score").value))
         self.target_collect_frames = max(1, int(self.get_parameter("target_collect_frames").value))
         self.qr_target_min_score = max(0.0, float(self.get_parameter("qr_target_min_score").value))
-        self.require_white_ring = bool(self.get_parameter("require_white_ring").value)
-        self.white_ring_s_max = int(self.get_parameter("white_ring_s_max").value)
-        self.white_ring_v_min = int(self.get_parameter("white_ring_v_min").value)
-        self.white_ring_fill_ratio = float(self.get_parameter("white_ring_fill_ratio").value)
+        self.require_ring = bool(self.get_parameter("require_ring").value)
+        self.ring_hough_param2 = int(self.get_parameter("ring_hough_param2").value)
+        self.ring_white_s_max = int(self.get_parameter("ring_white_s_max").value)
+        self.ring_white_v_min = int(self.get_parameter("ring_white_v_min").value)
 
         if not Path(cls_model_path).exists():
             self.get_logger().warning(f"cls model not found: {cls_model_path}")
@@ -371,47 +371,32 @@ class MissionVisionNode(Node):
         contrast = max(abs(ring_mean - inner_mean), abs(ring_mean - outer_mean))
         return contrast >= 18.0
 
-    def _detect_white_ring(self, frame: np.ndarray) -> bool:
-        """Return True only when a white circular ring is visible in the frame."""
+    def _detect_ring(self, frame: np.ndarray) -> bool:
+        """Return True when a white circular ring is visible in the frame."""
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         white_mask = cv2.inRange(
             hsv,
-            np.array([0, 0, self.white_ring_v_min]),
-            np.array([180, self.white_ring_s_max, 255]),
+            np.array([0, 0, self.ring_white_v_min]),
+            np.array([180, self.ring_white_s_max, 255]),
         )
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         masked = cv2.bitwise_and(gray, gray, mask=white_mask)
         blurred = cv2.GaussianBlur(masked, (9, 9), 0)
-
         h, w = gray.shape
         min_dim = min(h, w)
         min_r = max(12, int(min_dim * self.ring_min_radius_ratio))
         max_r = max(min_r + 1, int(min_dim * self.ring_max_radius_ratio))
-
         circles = cv2.HoughCircles(
             blurred, cv2.HOUGH_GRADIENT,
             dp=1.2,
             minDist=max(30, min_dim // 3),
-            param1=60, param2=20,
+            param1=90, param2=self.ring_hough_param2,
             minRadius=min_r, maxRadius=max_r,
         )
-        if circles is None:
-            return False
-
-        for cx, cy, r in np.round(circles[0]).astype(int):
-            thickness = max(3, r // 6)
-            ring_mask = np.zeros(gray.shape, dtype=np.uint8)
-            cv2.circle(ring_mask, (cx, cy), r, 255, thickness)
-            ring_pixels = int(np.count_nonzero(ring_mask))
-            if ring_pixels == 0:
-                continue
-            white_pixels = int(np.count_nonzero(cv2.bitwise_and(white_mask, ring_mask)))
-            if white_pixels / ring_pixels >= self.white_ring_fill_ratio:
-                return True
-        return False
+        return circles is not None
 
     def _process_cls(self, frame: np.ndarray) -> None:
-        if self.require_white_ring and not self._detect_white_ring(frame):
+        if self.require_ring and not self._detect_ring(frame):
             return
         crop = self.cropper.crop(frame)
         qr_targets = self.qr_target_classes if self.qr_target_classes else None
