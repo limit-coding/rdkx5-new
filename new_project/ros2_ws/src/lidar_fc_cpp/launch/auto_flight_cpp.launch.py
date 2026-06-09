@@ -14,7 +14,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, TimerAction
+from launch.actions import ExecuteProcess, IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 
@@ -92,6 +92,21 @@ def generate_launch_description():
         }],
     )
 
+    # 圆环激光雷达检测：订阅 /mid360/xy_points，RANSAC 圆拟合，
+    # 发布 /ring/detected + /ring/offset（y=横向偏移m）供 fc_bridge 转发给飞控。
+    ring_scripts_dir = os.path.join(
+        get_package_share_directory('lidar_fc_cpp'),
+        '..', '..', '..', '..', 'src', 'lidar_fc_cpp', 'scripts',
+    )
+    ring_lidar_node = ExecuteProcess(
+        cmd=[
+            'python3',
+            os.path.join(ring_scripts_dir, 'ring_lidar_detector.py'),
+        ],
+        output='screen',
+        additional_env={'PYTHONUNBUFFERED': '1'},
+    )
+
     return LaunchDescription([
         livox_launch,
         TimerAction(period=2.0, actions=[fast_lio_launch]),
@@ -100,5 +115,6 @@ def generate_launch_description():
             relative_pose_node,
             fc_bridge_node,
             qr_detector_node,
+            ring_lidar_node,
         ]),
     ])

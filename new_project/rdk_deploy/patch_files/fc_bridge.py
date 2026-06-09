@@ -12,7 +12,7 @@ import threading
 import time
 
 import rclpy
-from geometry_msgs.msg import PoseStamped, Quaternion, Vector3
+from geometry_msgs.msg import Point, PoseStamped, Quaternion, Vector3
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
 from std_msgs.msg import Bool, Header, Int32, Int32MultiArray, String
@@ -81,6 +81,13 @@ class FcSerialBridge(Node):
         self._task_lock    = threading.Lock()
         self.create_subscription(Int32MultiArray, '/task_status', self._on_task_status, 10)
 
+        # 圆环偏移（来自 ring_lidar_detector）
+        self._ring_detected  = False
+        self._ring_offset_y  = 0.0   # 横向偏移，单位 m，右正左负
+        self._ring_lock      = threading.Lock()
+        self.create_subscription(Bool,  '/ring/detected', self._on_ring_detected, 10)
+        self.create_subscription(Point, '/ring/offset',   self._on_ring_offset,   10)
+
         # 上锁
         self.create_subscription(String, '/lock', self._on_lock, 10)
 
@@ -94,6 +101,7 @@ class FcSerialBridge(Node):
         # ── 定时发送 ─────────────────────────────
         self.create_timer(1.0 / send_freq, self._send_position)   # 位置帧 20 Hz
         self.create_timer(0.1, self._send_task_status)            # 任务状态帧 10 Hz
+        self.create_timer(0.1, self._send_ring_offset)            # 圆环偏移帧 10 Hz
 
         # ── 接收线程 ─────────────────────────────
         self._rx_thread = threading.Thread(target=self._rx_loop, daemon=True)
@@ -357,6 +365,36 @@ class FcSerialBridge(Node):
                 full_frame,
                 f'任务状态帧 task=0x{ts:02X} landing=0x{ls:02X}',
                 change_key=(ts, ls))
+
+    # ═══════════════════════════════════════════════
+    # 发送：圆环横向偏移帧 AA FF 03 02 [offset_cm_H] [offset_cm_L] [sum]
+    # 仅在检测到圆环时持续发送（10 Hz），丢失圆环后自动停发
+    # offset_cm：有符号 int16 大端，单位 cm，右正左负
+    # ═══════════════════════════════════════════════
+
+    def _on_ring_detected(self, msg: Bool):
+        with self._ring_lock:
+            self._ring_detected = bool(msg.data)
+
+    def _on_ring_offset(self, msg: Point):
+        with self._ring_lock:
+            self._ring_offset_y = float(msg.y)
+
+    def _send_ring_offset(self):
+        with self._ring_lock:
+            detected = self._ring_detected
+            offset_y = self._ring_offset_y
+        if not detected:
+            return
+        offset_cm = max(-32768, min(32767, int(offset_y * 100)))
+        frame = self._make_frame(0x03, struct.pack('>h', offset_cm))
+        if self._write(frame):
+            self._log_tx_throttled(
+                'ring',
+                frame,
+                f'圆环偏移 y={offset_y:+.3f}m ({offset_cm:+d}cm)',
+                change_key=offset_cm,
+            )
 
     # ═══════════════════════════════════════════════
     # 接收投放命令 0x0B 后立即 ACK，并触发本机投放
